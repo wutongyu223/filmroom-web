@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>1080p 网络测试</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f6f7f9;color:#18191c;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}main{max-width:760px;margin:auto;padding:24px 16px calc(30px + env(safe-area-inset-bottom))}a{color:#858b94;text-decoration:none;font-size:12px}h1{font-size:24px;margin:18px 0 5px;font-weight:600}p{margin:6px 0;color:#7d838d;font-size:12px}.badge{color:#fb7299;font-size:11px;letter-spacing:1px}.player{display:grid;place-items:center;margin-top:20px;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:16/9}video[hidden]{display:none}.placeholder{color:#a1a5ad;font-size:13px}video{display:block;width:100%;height:100%;background:#000}.status{padding:13px 15px;border-radius:7px;background:#fff;margin:14px 0;font-size:12px;overflow-wrap:anywhere}.buttons{display:flex;flex-wrap:wrap;gap:9px}button{font:inherit;border:1px solid #e2e4e8;border-radius:6px;padding:10px 13px;cursor:pointer;background:#fff;color:#61666d;font-size:12px}button.primary{background:#fb7299;color:#fff;border-color:#fb7299}button:disabled{opacity:.4;cursor:default}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:20px 0}.metric{border:1px solid #eef0f3;padding:14px;background:#fff;border-radius:8px}.metric span{display:block;color:#9499a0;font-size:11px}.metric strong{display:block;font-size:22px;font-weight:500;margin-top:4px}.notes{background:#fff;padding:16px;border-radius:8px;margin-top:20px}.notes h2{font-size:13px;font-weight:500;margin:0 0 8px}.notes p{font-size:11px;margin:6px 0}.copy{width:100%;margin-top:4px}#source{font-size:10px;color:#a1a5ad;overflow-wrap:anywhere;margin-top:14px}@media(min-width:700px){main{padding-top:36px}.metrics{grid-template-columns:repeat(4,1fr)}}
+  </style>
+</head>
+<body><main>
+  <a href="./#/cinema">← 返回番剧</a>
+  <h1>1080p 网络测试</h1><span class="badge" id="badge">R2 · 原画质短片</span>
+  <p>用实际观看的公司 Wi-Fi 测试，关闭代理后再测一次。</p>
+  <div class="player"><div class="placeholder" id="placeholder">测试样片待接入</div><video hidden id="video" controls playsinline preload="none" crossorigin="anonymous"></video></div>
+  <div class="status" id="status" role="status">正在读取测试配置…</div>
+  <div class="buttons"><button class="primary" id="play" disabled>播放测试</button><button id="seek" disabled>跳到 1 分钟</button><button id="download" disabled>测 2MB 下载</button></div>
+  <div class="metrics">
+    <div class="metric"><span>首播等待</span><strong id="first">—</strong></div>
+    <div class="metric"><span>跳转耗时</span><strong id="seek-time">—</strong></div>
+    <div class="metric"><span>单次下载速度</span><strong id="speed">—</strong></div>
+    <div class="metric"><span>缓冲中断次数</span><strong id="stalls">0</strong></div>
+  </div>
+  <button class="copy" id="copy">复制测试结果</button>
+  <section class="notes"><h2>怎么判断</h2><p>先播放一会，再跳到 1 分钟，观察是否很快恢复画面、是否连续缓冲。</p><p>样片平均约 5Mbps。单次下载测试包含连接等待，只作参考，不能代表整集或所有运营商的速度。</p><p>这里只播放约 2 分钟的测试片段；不会自动下载整季。重复测试可能受浏览器缓存影响。</p><p>测试结果只在本页显示，复制后可发回聊天；本页不会自动上传测试记录。</p></section>
+  <p id="source"></p>
+</main><script type="module">
+  const $=id=>document.getElementById(id), video=$('video');
+  const result={provider:'R2',firstPlayMs:null,seekMs:null,downloadMbps:null,stalls:0,resolution:null,error:null};
+  let source=null,firstStart=null,seekStart=null,started=false,buffering=false,downloadBusy=false;
+  const status=text=>$('status').textContent=text;
+  const seconds=ms=>(ms/1000).toFixed(2)+'s';
+  const render=()=>{ $('first').textContent=result.firstPlayMs===null?'—':seconds(result.firstPlayMs);$('seek-time').textContent=result.seekMs===null?'—':seconds(result.seekMs);$('speed').textContent=result.downloadMbps===null?'—':result.downloadMbps.toFixed(1)+'Mbps';$('stalls').textContent=result.stalls; };
+  try {
+    const response=await fetch('./api/r2-test.json',{cache:'no-store'});
+    if(!response.ok)throw Error('测试配置读取失败');
+    const config=await response.json();
+    const override=new URLSearchParams(location.search).get('src');
+    const candidate=override||config.url;
+    if(!candidate)status('R2 尚未开通，样片已准备，接入后这里可以开始测试。');
+    else {
+      const url=new URL(candidate,location.href);
+      if((url.protocol!=='https:' && !['localhost','127.0.0.1'].includes(location.hostname))||url.username||url.password)throw Error('测试视频地址无效');
+      source=url.href;video.src=source;video.hidden=false;$('placeholder').hidden=true;result.provider=override?'界面联调':config.provider||'R2';
+      $('badge').textContent=override?'界面联调 · 非 R2 线路':'R2 · 原画质短片';
+      $('play').disabled=false;$('download').disabled=false;
+      $('source').textContent=`视频来源：${url.hostname} · ${override?'仅验证页面功能，非 R2 测速':config.label||'1080p 测试片段'}`;
+      status('已准备好。请点击播放测试。');
+    }
+  }catch(error){status(error.message);result.error=error.message;}
+  $('play').onclick=async()=>{
+    firstStart=performance.now();seekStart=null;started=false;buffering=false;result.stalls=0;result.firstPlayMs=null;result.seekMs=null;result.error=null;render();
+    video.currentTime=0;status('正在连接视频…');
+    try{await video.play();}catch(error){firstStart=null;result.error=error.message;status('播放失败：'+error.message);}
+  };
+  video.addEventListener('loadedmetadata',()=>{result.resolution=`${video.videoWidth}×${video.videoHeight}`;$('seek').disabled=false;});
+  video.addEventListener('playing',()=>{
+    if(firstStart!==null){result.firstPlayMs=Math.round(performance.now()-firstStart);firstStart=null;}
+    started=true;buffering=false;render();status('正在播放 · '+(result.resolution||'1080p'));
+  });
+  video.addEventListener('waiting',()=>{
+    if(started && !video.seeking && seekStart===null && !buffering && !video.paused){result.stalls++;buffering=true;render();status('正在缓冲…');}
+  });
+  video.addEventListener('seeked',()=>{if(seekStart!==null){result.seekMs=Math.round(performance.now()-seekStart);seekStart=null;render();}});
+  video.addEventListener('error',()=>{const error=video.error;result.error=error?`媒体错误 ${error.code}：${error.message||'无法加载视频'}`:'无法加载视频';status(result.error);firstStart=null;seekStart=null;});
+  $('seek').onclick=()=>{seekStart=performance.now();video.currentTime=Math.min(60,Math.max(0,video.duration-1));status('正在跳转…');};
+  $('download').onclick=async()=>{
+    if(!source||downloadBusy)return;video.pause();downloadBusy=true;$('download').disabled=true;
+    const start=performance.now();status('正在测试 2MB 下载…');
+    try{
+      const response=await fetch(source,{headers:{Range:'bytes=0-2097151'},cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(30000)});
+      if(response.status!==206){await response.body?.cancel();throw Error('服务器没有返回分段下载响应，已停止测速。');}
+      const bytes=await response.arrayBuffer();
+      result.downloadMbps=bytes.byteLength*8/(performance.now()-start)/1000;render();status('下载测速完成，继续播放观察是否稳定。');
+    }catch(error){result.error=error.message;status('测速失败：'+error.message);}
+    finally{downloadBusy=false;$('download').disabled=false;}
+  };
+  $('copy').onclick=async()=>{
+    const report={...result,videoHost:source?new URL(source).hostname:null,playbackTime:Math.round(video.currentTime),measuredAt:new Date().toISOString()};
+    try{await navigator.clipboard.writeText(JSON.stringify(report,null,2));status('测试结果已复制，可粘贴回聊天。');}
+    catch{status('复制失败，请截下本页的测试结果。');}
+  };
+</script></body></html>
